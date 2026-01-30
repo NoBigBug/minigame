@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>오징어 게임 미로 - 멈추면 죽음!</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Roboto', sans-serif; }
+        #ui {
+            position: absolute; top: 20px; left: 20px;
+            color: white; background: rgba(0,0,0,0.8);
+            padding: 15px; border-radius: 10px; border: 2px solid #ff004f; /* 오징어 게임 테마 색상 */
+            z-index: 10; pointer-events: none;
+        }
+        #insult-text {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffde00; /* 경고색 */
+            font-size: 3.5rem; font-weight: bold;
+            text-shadow: 0 0 15px #ff004f; /* 오징어 게임 테마 색상 */
+            opacity: 0; transition: opacity 0.2s;
+            pointer-events: none; text-align: center; width: 100%; z-index: 20;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 8px; height: 8px; background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%; transform: translate(-50%, -50%);
+            pointer-events: none; border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        <h2 style="margin:0; color: #ff004f;">🔴 오징어 게임 미로</h2>
+        <p>규칙: <b>클릭 유지</b> 시에만 전진</p>
+        <p>페널티: <b>클릭 해제</b> 시 처음으로 소환</p>
+        <p style="color: #ffde00;">생존을 위해 전진하세요!</p>
+    </div>
+
+    <div id="insult-text">벽이랑 대화하니? 🧱</div>
+    <div id="crosshair"></div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- 텍스처 로더 (벽에 텍스처 적용을 위해 필요) ---
+        const textureLoader = new THREE.TextureLoader();
+        const wallTexture = textureLoader.load('https://threejs.org/examples/textures/hardwood2_diffuse.jpg'); // 거친 벽 텍스처 예시
+        wallTexture.wrapS = wallTexture.wrapT = THREE.RepeatWrapping;
+        wallTexture.repeat.set(1, 1); // 텍스처 반복 횟수
+
+        // --- 초기 설정 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0a); // 어두운 배경
+        scene.fog = new THREE.Fog(0x400000, 1, 35); // 분홍색 안개
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- 조명 ---
+        const ambLight = new THREE.AmbientLight(0xffffff, 0.2); // 주변광 줄임
+        scene.add(ambLight);
+        const playerLight = new THREE.PointLight(0xff004f, 150, 15); // 플레이어 라이트 색상 변경
+        camera.add(playerLight);
+        scene.add(camera);
+
+        // --- 미로 데이터 ---
+        const M_SIZE = 4; // 벽 하나당 실제 크기
+        const maze = [
+            [1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,1,0,0,1],
+            [1,0,1,1,1,0,1,0,0,1],
+            [1,0,0,0,1,0,1,1,0,1],
+            [1,1,1,0,1,0,0,0,0,1],
+            [1,0,0,0,0,1,1,1,0,1],
+            [1,0,1,1,0,0,0,1,0,1],
+            [1,0,0,1,1,1,0,0,0,1],
+            [1,1,0,0,0,0,0,1,0,1],
+            [1,1,1,1,1,1,1,1,1,1],
+        ];
+
+        const walls = [];
+        const wallGeo = new THREE.BoxGeometry(M_SIZE, 6, M_SIZE);
+        const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture, color: 0x444444 }); // 텍스처와 어두운 색상 조합
+
+        maze.forEach((row, z) => {
+            row.forEach((cell, x) => {
+                if(cell === 1) {
+                    const wall = new THREE.Mesh(wallGeo, wallMat);
+                    wall.position.set(x * M_SIZE, 3, z * M_SIZE);
+                    scene.add(wall);
+                    walls.push(wall);
+                }
+            });
+        });
+
+        // 바닥 (짙은 녹색)
+        const floor = new THREE.Mesh(
+            new THREE.PlaneGeometry(200, 200),
+            new THREE.MeshStandardMaterial({ color: 0x224422 })
+        );
+        floor.rotation.x = -Math.PI/2;
+        scene.add(floor);
+
+        // --- 캐릭터 설정 ---
+        const startPos = new THREE.Vector3(M_SIZE, 1.6, M_SIZE);
+        camera.position.copy(startPos);
+        let isMoving = false;
+        const playerRadius = 0.8;
+
+        // --- 이벤트 ---
+        const insultText = document.getElementById('insult-text');
+        const insults = [
+            "🔴 탈락입니다!",
+            "게임 오버. 넌 탈락이야.",
+            "손가락이 미끄러졌군, 플레이어.",
+            "실망이군, 다음 기회에...",
+            "응, 처음부터 다시 해~ 😈",
+            "벽이랑 사랑에 빠졌니? 💖",
+            "포기하면 편해! (진짜로)",
+            "너 지금 킹받았지?"
+        ];
+
+        function showInsult() {
+            insultText.innerText = insults[Math.floor(Math.random()*insults.length)];
+            insultText.style.opacity = '1';
+            setTimeout(() => insultText.style.opacity = '0', 1000);
+        }
+
+        window.addEventListener('mousedown', (e) => { if(e.button === 0) isMoving = true; });
+        window.addEventListener('mouseup', (e) => { 
+            if(e.button === 0 && isMoving) {
+                isMoving = false;
+                camera.position.copy(startPos); // 리셋
+                yaw = 0; pitch = 0;
+                camera.rotation.set(0, 0, 0);
+                showInsult();
+            }
+        });
+
+        document.body.addEventListener('click', () => document.body.requestPointerLock());
+
+        let yaw = 0, pitch = 0;
+        window.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, pitch));
+                camera.rotation.set(pitch, yaw, 0, 'YXZ');
+            }
+        });
+
+        // --- 충돌 감지 로직 ---
+        function checkCollision(nextPos) {
+            for (let wall of walls) {
+                const dx = Math.abs(nextPos.x - wall.position.x);
+                const dz = Math.abs(nextPos.z - wall.position.z);
+                if (dx < (M_SIZE / 2 + playerRadius) && dz < (M_SIZE / 2 + playerRadius)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // --- 루프 ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isMoving) {
+                const dir = new THREE.Vector3();
+                camera.getWorldDirection(dir);
+                dir.y = 0; 
+                dir.normalize();
+
+                const speed = 0.12;
+                const nextPos = camera.position.clone().addScaledVector(dir, speed);
+
+                if (!checkCollision(nextPos)) {
+                    camera.position.copy(nextPos);
+                } else {
+                    // 벽에 부딪혔을 때도 약 올리는 멘트를 띄우고 싶다면 여기에 showInsult() 추가
+                    // showInsult(); 
+                }
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
