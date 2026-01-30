@@ -2,54 +2,48 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>무궁화 꽃이 피었습니다.</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Squid Game - Mobile Version</title>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f0f0f0; font-family: 'Arial', sans-serif; overflow: hidden; }
-        canvas { background: #e0e0e0; border: 5px solid #333; box-shadow: 0 0 20px rgba(0,0,0,0.2); }
-        #status { font-size: 2rem; font-weight: bold; margin-bottom: 10px; height: 40px; }
+        body { 
+            margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; 
+            height: 100vh; background-color: #f0f0f0; font-family: 'Arial', sans-serif; 
+            overflow: hidden; touch-action: none; /* 브라우저 기본 터치 액션 방지 */
+        }
+        canvas { 
+            background: #e0e0e0; border: 5px solid #333; box-shadow: 0 0 20px rgba(0,0,0,0.2); 
+            max-width: 90vw; max-height: 70vh; /* 모바일 화면 대응 */
+        }
+        #status { font-size: 1.5rem; font-weight: bold; margin-bottom: 10px; height: 30px; }
         .red { color: red; }
         .green { color: green; }
         
-        /* 공통 결과 화면 스타일 */
+        /* 결과 화면 */
         #resultOverlay {
-            display: none;
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            color: white;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            text-align: center;
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            color: white; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 10; text-align: center;
         }
-        
-        /* 성공/실패 배경색 */
         .fail-bg { background-color: rgba(220, 20, 60, 0.9); }
         .success-bg { background-color: rgba(46, 204, 113, 0.9); }
+        #resultOverlay h1 { font-size: 3rem; margin: 0; }
+        .timer-info { font-size: 1.5rem; margin-top: 15px; }
+        #retryBtn { margin-top: 25px; padding: 12px 25px; font-size: 1.2rem; cursor: pointer; border-radius: 10px; border: none; }
 
-        #resultOverlay h1 { font-size: 5rem; margin: 0; text-shadow: 4px 4px #000; }
-        #resultOverlay .timer-info { font-size: 2rem; margin-top: 20px; font-weight: bold; background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 50px; }
-        #retryBtn { margin-top: 30px; padding: 15px 30px; font-size: 1.5rem; cursor: pointer; border: none; background: #fff; color: #333; font-weight: bold; border-radius: 10px; transition: 0.2s; }
-        #retryBtn:hover { transform: scale(1.1); }
-
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-20px); }
-        }
-        .bounce { animation: bounce 0.5s infinite; }
+        .guide { margin-top: 10px; color: #888; font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
     <div id="status" class="green">READY</div>
     <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <div class="guide">화면을 터치하거나 클릭하면 앞으로 이동합니다!</div>
 
     <div id="resultOverlay">
         <h1 id="resultTitle">결과</h1>
-        <p id="resultMsg">메시지</p>
-        <div class="timer-info">소요 시간: <span id="timeTaken">0</span>초</div>
-        <button id="retryBtn" onclick="location.reload()">다시 시작하기</button>
+        <p id="resultMsg"></p>
+        <div class="timer-info">기록: <span id="timeTaken">0</span>초</div>
+        <button id="retryBtn" onclick="location.reload()">다시 시작</button>
     </div>
 
     <script>
@@ -57,78 +51,89 @@
         const ctx = canvas.getContext('2d');
         const statusText = document.getElementById('status');
         const resultOverlay = document.getElementById('resultOverlay');
-        const resultTitle = document.getElementById('resultTitle');
-        const resultMsg = document.getElementById('resultMsg');
         const timeTakenText = document.getElementById('timeTaken');
 
         let isRedLight = true;
         let gameOver = false;
-        let startTime = Date.now(); // 게임 시작 시간 기록
+        let startTime = Date.now();
         
-        const goalY = 50;
-        const startY = 550;
-        const player = { x: canvas.width / 2, y: startY, radius: 15, color: '#0061ff' };
+        const goalY = 60;
+        const startY = 540;
+        const player = { x: canvas.width / 2, y: startY, radius: 18, color: '#0061ff' };
+
+        // 이동 함수 (키보드와 터치 공용)
+        function moveForward() {
+            if (gameOver) return;
+            
+            if (isRedLight) {
+                endGame(false);
+            } else {
+                player.y -= 15; // 모바일이라 조금 더 시원하게 이동하게 변경
+                if (player.y <= goalY) endGame(true);
+            }
+        }
+
+        // 1. 키보드 이벤트
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' || e.key === ' ') moveForward();
+        });
+
+        // 2. 터치 및 마우스 클릭 이벤트
+        window.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // 스크롤 방지
+            moveForward();
+        }, { passive: false });
+
+        window.addEventListener('mousedown', (e) => {
+            moveForward();
+        });
 
         function toggleLight() {
             if (gameOver) return;
             isRedLight = !isRedLight;
             if (isRedLight) {
-                statusText.textContent = "RED LIGHT!";
+                statusText.textContent = "🛑 RED LIGHT (멈춰!!)";
                 statusText.className = "red";
-                setTimeout(toggleLight, 1000 + Math.random() * 1500);
+                setTimeout(toggleLight, 1200 + Math.random() * 1500);
             } else {
-                statusText.textContent = "GREEN LIGHT";
+                statusText.textContent = "🏃 GREEN LIGHT (가!!)";
                 statusText.className = "green";
                 setTimeout(toggleLight, 2000 + Math.random() * 2000);
             }
         }
 
-        window.addEventListener('keydown', (e) => {
-            if (gameOver) return;
-            if (e.key === 'ArrowUp') {
-                if (isRedLight) {
-                    endGame(false); // 탈락
-                } else {
-                    player.y -= 12;
-                    if (player.y <= goalY) endGame(true); // 성공
-                }
-            }
-        });
-
         function endGame(success) {
             gameOver = true;
-            const endTime = Date.now();
-            const duration = ((endTime - startTime) / 1000).toFixed(2); // 소요 시간 계산
-            
+            const duration = ((Date.now() - startTime) / 1000).toFixed(2);
             timeTakenText.textContent = duration;
             resultOverlay.style.display = 'flex';
 
             if (success) {
-                resultTitle.textContent = "SUCCESS! 🎉";
-                resultTitle.className = "bounce";
-                resultMsg.textContent = "오~ 운이 좋으시네요? 통과입니다!";
                 resultOverlay.className = "success-bg";
-                statusText.textContent = "승리!";
+                document.getElementById('resultTitle').textContent = "SUCCESS! 🎉";
+                document.getElementById('resultMsg').textContent = "와! 통과하셨네요!";
             } else {
-                resultTitle.textContent = "ELIMINATED! 🔫";
-                resultTitle.className = "";
-                resultMsg.textContent = "바보야~ 움직였지롱!! 너 탈락!!";
                 resultOverlay.className = "fail-bg";
-                statusText.textContent = "탈락!";
+                document.getElementById('resultTitle').textContent = "ELIMINATED! 🔫";
+                document.getElementById('resultMsg').textContent = "바보야~ 움직였지롱!! 너 탈락!!";
             }
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // 결승선 배경
-            ctx.fillStyle = "#ffcc00";
+            
+            // 결승선 구역
+            ctx.fillStyle = "#FFD700";
             ctx.fillRect(0, 0, canvas.width, goalY);
-            // 결승선 라인
             ctx.strokeStyle = "red"; ctx.lineWidth = 5;
             ctx.beginPath(); ctx.moveTo(0, goalY); ctx.lineTo(canvas.width, goalY); ctx.stroke();
             
+            // 플레이어 그림자 효과
+            ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.2)";
             ctx.fillStyle = player.color;
             ctx.beginPath(); ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0; // 그림자 해제
+
             requestAnimationFrame(draw);
         }
 
